@@ -1,0 +1,28 @@
+[package]
+name = "ceres_wallet_frost_mpc"
+version = "0.1.0"
+edition = "2021"
+description = "FROST-Ed25519 2-of-2 threshold signing library — pure cryptographic primitives for Solana MPC wallets"
+repository = "https://github.com/SauceWu/ceres_wallet_frost_mpc"
+license = "MIT"
+
+[dependencies]
+# FROST-Ed25519 crypto
+frost-ed25519 = "3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+hex = "0.4"
+
+# Crypto utilities
+rand = "0.8"
+aes-gcm = "0.10"
+curve25519-dalek = "4"
+hkdf = "0.12"
+sha2 = "0.10"
+
+[dev-dependencies]
+frost-ed25519 = "3"
+rand = "0.8"
