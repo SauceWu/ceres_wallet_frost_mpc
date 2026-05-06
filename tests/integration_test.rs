@@ -24,14 +24,17 @@ use ceres_wallet_frost_mpc::{
 
 // ── Shared helper ─────────────────────────────────────────────────────────────
 
+const CLIENT_ID: u16 = 1;
+const SERVER_ID: u16 = 2;
+
 /// Run a full 2-of-2 DKG and return (server_kp, server_pkp, client_kp, client_pkp).
 fn run_keygen() -> (KeyPackage, PublicKeyPackage, KeyPackage, PublicKeyPackage) {
     let mut rng = rand::thread_rng();
-    let client_id = Identifier::try_from(1u16).unwrap();
-    let server_id = Identifier::try_from(2u16).unwrap();
+    let client_id = Identifier::try_from(CLIENT_ID).unwrap();
+    let server_id = Identifier::try_from(SERVER_ID).unwrap();
 
     // Server round 1
-    let (ks, srv_r1) = keygen_part1(&mut rng).unwrap();
+    let (ks, srv_r1) = keygen_part1(SERVER_ID, CLIENT_ID, &mut rng).unwrap();
     let srv_r1_inner: DkgR1Payload = decode_inner(&srv_r1).unwrap();
     let srv_r1_pkg =
         dkg::round1::Package::deserialize(&hex::decode(&srv_r1_inner.round1_pkg).unwrap())
@@ -87,15 +90,16 @@ fn test_keygen_full_roundtrip() {
 #[test]
 fn test_sign_full_roundtrip() {
     let mut rng = rand::thread_rng();
-    let client_id = Identifier::try_from(1u16).unwrap();
-    let server_id = Identifier::try_from(2u16).unwrap();
+    let client_id = Identifier::try_from(CLIENT_ID).unwrap();
+    let server_id = Identifier::try_from(SERVER_ID).unwrap();
     let (srv_kp, srv_pkp, cli_kp, _) = run_keygen();
 
     let mut message_hash = [0u8; 32];
     rng.fill_bytes(&mut message_hash);
 
     // Server round 1: commit
-    let (sign_state, _srv_commits_enc) = sign_part1(&srv_kp, message_hash, &mut rng).unwrap();
+    let (sign_state, _srv_commits_enc) =
+        sign_part1(&srv_kp, CLIENT_ID, message_hash, &mut rng).unwrap();
 
     // Client round 1: commit
     let (cli_nonces, cli_commitments) = sign_r1::commit(cli_kp.signing_share(), &mut rng);
@@ -131,8 +135,8 @@ fn test_sign_full_roundtrip() {
 #[test]
 fn test_recovery_full_roundtrip() {
     let mut rng = rand::thread_rng();
-    let client_id = Identifier::try_from(1u16).unwrap();
-    let server_id = Identifier::try_from(2u16).unwrap();
+    let client_id = Identifier::try_from(CLIENT_ID).unwrap();
+    let server_id = Identifier::try_from(SERVER_ID).unwrap();
     let (srv_kp, srv_pkp, cli_kp, cli_pkp) = run_keygen();
     let old_vk = srv_pkp.verifying_key().serialize().unwrap();
 
@@ -185,8 +189,8 @@ fn test_recovery_full_roundtrip() {
 #[test]
 fn test_recovery_rotation_version_increments() {
     let mut rng = rand::thread_rng();
-    let client_id = Identifier::try_from(1u16).unwrap();
-    let server_id = Identifier::try_from(2u16).unwrap();
+    let client_id = Identifier::try_from(CLIENT_ID).unwrap();
+    let server_id = Identifier::try_from(SERVER_ID).unwrap();
     let (mut srv_kp, mut srv_pkp, mut cli_kp, mut cli_pkp) = run_keygen();
     let original_vk = srv_pkp.verifying_key().serialize().unwrap();
 
@@ -266,8 +270,8 @@ fn test_build_share_envelope_format() {
 fn test_export_private_key() {
     let mut rng = rand::thread_rng();
     let (shares, pkp) = generate_with_dealer(2, 2, IdentifierList::Default, &mut rng).unwrap();
-    let client_id = Identifier::try_from(1u16).unwrap();
-    let server_id = Identifier::try_from(2u16).unwrap();
+    let client_id = Identifier::try_from(CLIENT_ID).unwrap();
+    let server_id = Identifier::try_from(SERVER_ID).unwrap();
     let cli_kp = KeyPackage::try_from(shares[&client_id].clone()).unwrap();
     let srv_kp = KeyPackage::try_from(shares[&server_id].clone()).unwrap();
 
