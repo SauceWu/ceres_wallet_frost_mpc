@@ -16,16 +16,15 @@ pub struct SignSessionState {
     pub other_id: Identifier,
 }
 
-/// Round 1: commit. Own identifier is derived from `key_package`; `other_party_id`
-/// identifies the other participant.
+/// Round 1: commit. Own identifier is derived from `key_package`;
+/// the other party's identifier is inferred as the complement in {1, 2}.
 pub fn sign_part1(
     key_package: &frost_ed25519::keys::KeyPackage,
-    other_party_id: u16,
     message_hash: [u8; 32],
     rng: &mut (impl rand::RngCore + rand::CryptoRng),
 ) -> Result<(SignSessionState, String), FrostMpcError> {
     let my_id = *key_package.identifier();
-    let other_id = id(other_party_id)?;
+    let other_id = complement(my_id)?;
     let (nonces, my_commitments) = sign_r1::commit(key_package.signing_share(), rng);
     let payload = SignR1Payload {
         commitments: frost_ser!(&my_commitments, "my_commitments")?,
@@ -64,4 +63,18 @@ pub fn sign_part2(
 
 fn id(n: u16) -> Result<Identifier, FrostMpcError> {
     Identifier::try_from(n).map_err(|e| FrostMpcError::Protocol(format!("Identifier({n}): {e}")))
+}
+
+fn complement(my_id: Identifier) -> Result<Identifier, FrostMpcError> {
+    let id1 = id(1)?;
+    let id2 = id(2)?;
+    if my_id == id1 {
+        Ok(id2)
+    } else if my_id == id2 {
+        Ok(id1)
+    } else {
+        Err(FrostMpcError::Protocol(
+            "party_id must be 1 or 2 in a 2-of-2 scheme".to_string(),
+        ))
+    }
 }

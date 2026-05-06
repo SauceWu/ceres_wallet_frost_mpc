@@ -23,14 +23,13 @@ pub struct KeygenSessionState {
 }
 
 /// Round 1: generate own DKG round-1 package.
-/// `my_id` and `other_id` are the two participants' numeric identifiers (e.g. 1 and 2).
+/// `party_id` is this party's numeric identifier (1 or 2); the other party's id is inferred.
 pub fn keygen_part1(
-    my_id: u16,
-    other_id: u16,
+    party_id: u16,
     rng: &mut (impl rand::RngCore + rand::CryptoRng),
 ) -> Result<(KeygenSessionState, String), FrostMpcError> {
-    let my_id = id(my_id)?;
-    let other_id = id(other_id)?;
+    let my_id = id(party_id)?;
+    let other_id = complement(my_id)?;
     let (r1_secret, r1_pkg) = dkg::part1(my_id, MAX_SIGNERS, MIN_SIGNERS, rng)
         .map_err(|e| FrostMpcError::Protocol(format!("dkg::part1: {e}")))?;
     let payload = DkgR1Payload { round1_pkg: frost_ser!(&r1_pkg, "r1_pkg")? };
@@ -121,4 +120,19 @@ pub fn keygen_part3(
 
 fn id(n: u16) -> Result<Identifier, FrostMpcError> {
     Identifier::try_from(n).map_err(|e| FrostMpcError::Protocol(format!("Identifier({n}): {e}")))
+}
+
+/// In a 2-of-2 scheme with identifiers {1, 2}, return the other party's identifier.
+fn complement(my_id: Identifier) -> Result<Identifier, FrostMpcError> {
+    let id1 = id(1)?;
+    let id2 = id(2)?;
+    if my_id == id1 {
+        Ok(id2)
+    } else if my_id == id2 {
+        Ok(id1)
+    } else {
+        Err(FrostMpcError::Protocol(
+            "party_id must be 1 or 2 in a 2-of-2 scheme".to_string(),
+        ))
+    }
 }

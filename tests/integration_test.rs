@@ -34,7 +34,7 @@ fn run_keygen() -> (KeyPackage, PublicKeyPackage, KeyPackage, PublicKeyPackage) 
     let server_id = Identifier::try_from(SERVER_ID).unwrap();
 
     // Server round 1
-    let (ks, srv_r1) = keygen_part1(SERVER_ID, CLIENT_ID, &mut rng).unwrap();
+    let (ks, srv_r1) = keygen_part1(SERVER_ID, &mut rng).unwrap();
     let srv_r1_inner: DkgR1Payload = decode_inner(&srv_r1).unwrap();
     let srv_r1_pkg =
         dkg::round1::Package::deserialize(&hex::decode(&srv_r1_inner.round1_pkg).unwrap())
@@ -99,7 +99,7 @@ fn test_sign_full_roundtrip() {
 
     // Server round 1: commit
     let (sign_state, _srv_commits_enc) =
-        sign_part1(&srv_kp, CLIENT_ID, message_hash, &mut rng).unwrap();
+        sign_part1(&srv_kp, message_hash, &mut rng).unwrap();
 
     // Client round 1: commit
     let (cli_nonces, cli_commitments) = sign_r1::commit(cli_kp.signing_share(), &mut rng);
