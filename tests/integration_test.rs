@@ -139,6 +139,8 @@ fn test_recovery_full_roundtrip() {
     let server_id = Identifier::try_from(SERVER_ID).unwrap();
     let (srv_kp, srv_pkp, cli_kp, cli_pkp) = run_keygen();
     let old_vk = srv_pkp.verifying_key().serialize().unwrap();
+    let old_srv_share = srv_kp.signing_share().serialize();
+    let old_srv_id = *srv_kp.identifier();
 
     // Server round 1
     let (state, srv_r1) = recovery_part1(srv_kp, srv_pkp, &mut rng).unwrap();
@@ -175,15 +177,20 @@ fn test_recovery_full_roundtrip() {
     .unwrap();
 
     // Server finalize
-    let (_, new_srv_pkp) = recovery_part3(state, &cli_r2_enc).unwrap();
+    let (new_srv_kp, new_srv_pkp) = recovery_part3(state, &cli_r2_enc).unwrap();
 
     // Client finalize
     let mut r2_fin = BTreeMap::new();
     r2_fin.insert(server_id, srv_r2_pkg);
     refresh::refresh_dkg_shares(&cli_r2_secret, &cli_r1_pkgs, &r2_fin, cli_pkp, cli_kp).unwrap();
 
+    // Verifying key unchanged
     let new_vk = new_srv_pkp.verifying_key().serialize().unwrap();
     assert_eq!(old_vk.as_slice(), new_vk.as_slice());
+    // Party identifier unchanged
+    assert_eq!(*new_srv_kp.identifier(), old_srv_id);
+    // Signing share replaced
+    assert_ne!(new_srv_kp.signing_share().serialize(), old_srv_share);
 }
 
 #[test]
