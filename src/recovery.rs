@@ -23,15 +23,15 @@ pub struct RecoverySessionState {
     pub r2_secret: Option<dkg_r2::SecretPackage>,
 }
 
-/// Round 1: own identifier is derived from `key_pkg`; other party's identifier is
-/// derived from `pub_key_pkg.verifying_shares()`.
+/// Round 1: own identifier is derived from `key_pkg`;
+/// the other party's identifier is inferred as the complement in {1, 2}.
 pub fn recovery_part1(
     key_pkg: frost_ed25519::keys::KeyPackage,
     pub_key_pkg: frost_ed25519::keys::PublicKeyPackage,
     rng: &mut (impl rand::RngCore + rand::CryptoRng),
 ) -> Result<(RecoverySessionState, String), FrostMpcError> {
     let my_id = *key_pkg.identifier();
-    let other_id = other_id_from_pkp(my_id, &pub_key_pkg)?;
+    let other_id = complement(my_id)?;
     let (r1_secret, r1_pkg) =
         refresh::refresh_dkg_part1(my_id, MAX_SIGNERS, MIN_SIGNERS, rng)
             .map_err(|e| FrostMpcError::Protocol(format!("refresh_dkg_part1: {e}")))?;
@@ -132,13 +132,20 @@ pub fn recovery_part3(
     .map_err(|e| FrostMpcError::Protocol(format!("refresh_dkg_shares: {e}")))
 }
 
-fn other_id_from_pkp(
-    my_id: Identifier,
-    pkp: &frost_ed25519::keys::PublicKeyPackage,
-) -> Result<Identifier, FrostMpcError> {
-    pkp.verifying_shares()
-        .keys()
-        .find(|id| **id != my_id)
-        .copied()
-        .ok_or_else(|| FrostMpcError::Protocol("other party identifier not found in public key package".to_string()))
+fn id(n: u16) -> Result<Identifier, FrostMpcError> {
+    Identifier::try_from(n).map_err(|e| FrostMpcError::Protocol(format!("Identifier({n}): {e}")))
+}
+
+fn complement(my_id: Identifier) -> Result<Identifier, FrostMpcError> {
+    let id1 = id(1)?;
+    let id2 = id(2)?;
+    if my_id == id1 {
+        Ok(id2)
+    } else if my_id == id2 {
+        Ok(id1)
+    } else {
+        Err(FrostMpcError::Protocol(
+            "party_id must be 1 or 2 in a 2-of-2 scheme".to_string(),
+        ))
+    }
 }
