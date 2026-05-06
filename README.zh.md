@@ -22,57 +22,90 @@
 
 2-of-2 门限方案，所有操作都需要双方参与。
 
-- 客户端：`Identifier(1)`
-- 服务端：`Identifier(2)`
+- 参与方 1（客户端）：`Identifier(1)`
+- 参与方 2（服务端）：`Identifier(2)`
 
-所有轮函数都是纯函数 — 接受输入，返回输出，session 状态由调用方管理。
+所有轮函数**与参与方无关** — 双方调用相同的函数，传入各自的 `party_id`。函数为纯函数：接受输入，返回输出，session 状态由调用方管理。
 
-## 使用方式
+## 安装
 
 在 `Cargo.toml` 中添加：
 
 ```toml
 [dependencies]
-ceres_wallet_frost_mpc = { git = "https://github.com/SauceWu/ceres_wallet_frost_mpc.git" }
+# 锁定 tag（生产环境推荐）
+ceres_wallet_frost_mpc = { git = "https://github.com/SauceWu/ceres_wallet_frost_mpc", tag = "v0.1.0" }
+
+# 或跟踪分支
+ceres_wallet_frost_mpc = { git = "https://github.com/SauceWu/ceres_wallet_frost_mpc", branch = "main" }
+
+# 或锁定特定 commit
+ceres_wallet_frost_mpc = { git = "https://github.com/SauceWu/ceres_wallet_frost_mpc", rev = "abc1234" }
 ```
 
+## 使用方式
+
 ### 密钥生成（3 轮）
+
+双方使用各自的 `party_id`（1 或 2）调用相同的函数，每轮结束后交换消息。
 
 ```rust
 use ceres_wallet_frost_mpc::{keygen_part1, keygen_part2, keygen_part3};
 
-// 服务端第 1 轮 — 无需客户端输入
-let (state, srv_r1_encoded) = keygen_part1(&mut rng)?;
+// 第 1 轮：各方生成自己的 DKG 包
+let (state, my_r1_encoded) = keygen_part1(party_id, &mut rng)?;
 
-// 服务端第 2 轮 — 接收客户端第 1 轮消息
-let (state, srv_r2_encoded) = keygen_part2(state, &client_r1_encoded)?;
+// 与对方交换 r1_encoded，然后：
 
-// 服务端第 3 轮 — 接收客户端第 2 轮消息，生成密钥包
-let (key_package, public_key_package) = keygen_part3(state, &client_r2_encoded)?;
+// 第 2 轮：各方处理对方的 r1，生成自己的 r2
+let (state, my_r2_encoded) = keygen_part2(state, &other_r1_encoded)?;
+
+// 与对方交换 r2_encoded，然后：
+
+// 第 3 轮：完成密钥生成，返回 (KeyPackage, PublicKeyPackage)
+let (key_package, public_key_package) = keygen_part3(state, &other_r2_encoded)?;
 ```
 
 ### 签名（2 轮）
 
+客户端（参与方 1）负责聚合，服务端（参与方 2）在第 2 轮充当协调者。
+
 ```rust
 use ceres_wallet_frost_mpc::{sign_part1, sign_part2};
 
-// 服务端第 1 轮 — 生成 nonce commitment
-let (state, srv_r1_encoded) = sign_part1(&key_package, message_hash, &mut rng)?;
+// 第 1 轮：各方生成 nonce commitment
+let (state, my_r1_encoded) = sign_part1(&key_package, message_hash, &mut rng)?;
 
-// 服务端第 2 轮 — 接收客户端 commitment，返回 signing_package + sig_share
+// 交换 r1_encoded，然后服务端执行第 2 轮：
+
+// 第 2 轮（协调者）：构建 signing_package，生成自己的 sig_share
 let srv_r2_encoded = sign_part2(state, &client_r1_encoded, &key_package)?;
-// 客户端聚合双方 sig_share，产出最终 Schnorr 签名
+
+// 客户端收到 srv_r2_encoded，解析 signing_package 和服务端 sig_share，
+// 生成自己的 sig_share，聚合双方结果 → 最终 64 字节 Schnorr 签名。
 ```
 
+`message_hash` 类型为 `[u8; 32]`，即待签名的 32 字节消息摘要（例如对 Solana 序列化交易消息取 SHA-256）。
+
 ### 密钥恢复 / Share 轮换（3 轮）
+
+结构与 keygen 相同。验证密钥不变，只有 share 发生变化。
 
 ```rust
 use ceres_wallet_frost_mpc::{recovery_part1, recovery_part2, recovery_part3};
 
-let (state, srv_r1_encoded) = recovery_part1(key_package, public_key_package, &mut rng)?;
-let (state, srv_r2_encoded) = recovery_part2(state, &client_r1_encoded)?;
-let (new_key_package, new_public_key_package) = recovery_part3(state, &client_r2_encoded)?;
-// 验证密钥不变，只有 share 发生变化
+// 第 1 轮：基于现有密钥包启动 refresh
+let (state, my_r1_encoded) = recovery_part1(key_package, public_key_package, &mut rng)?;
+
+// 交换 r1_encoded，然后：
+
+// 第 2 轮
+let (state, my_r2_encoded) = recovery_part2(state, &other_r1_encoded)?;
+
+// 交换 r2_encoded，然后：
+
+// 第 3 轮：完成 — 新 share，验证密钥不变
+let (new_key_package, new_public_key_package) = recovery_part3(state, &other_r2_encoded)?;
 ```
 
 ### 私钥导出
@@ -86,7 +119,7 @@ let local_share = build_share_envelope(&client_key_package, &public_key_package)
 let server_share = build_share_envelope(&server_key_package, &public_key_package)?;
 
 let result = export_private_key(&local_share, &server_share)?;
-// result.private_key — 64 字符十六进制字符串（32 字节 Ed25519 标量）
+// result.private_key — 64 字符十六进制（32 字节 Ed25519 标量）
 // result.exported    — true
 ```
 
